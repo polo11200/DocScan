@@ -4,129 +4,116 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>DocScan — Recherche instantanée</title>
-
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4.1.4/dist/tesseract.min.js"></script>
-
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=DM+Mono:ital,wght@0,400;0,500;1,400&display=swap');
-
+    @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=DM+Mono:wght@400;500&display=swap');
     :root {
-      --bg: #071a1e;
-      --surface: #0d2a30;
-      --border: #1a4a52;
-      --accent: #2dd4bf;
-      --accent2: #0891b2;
-      --text: #e0f4f5;
-      --muted: #4d8a92;
-      --success: #34d1a0;
-      --radius: 4px;
+      --bg: #071a1e; --surface: #0d2a30; --border: #1a4a52;
+      --accent: #2dd4bf; --accent2: #0891b2; --text: #e0f4f5;
+      --muted: #4d8a92; --success: #34d1a0; --error: #ef4444;
+      --r: 4px;
     }
-
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
     body {
       background: var(--bg);
-      background-image:
-        radial-gradient(ellipse at 20% 0%, #0d3a42 0%, transparent 60%),
-        radial-gradient(ellipse at 80% 100%, #062830 0%, transparent 50%);
-      color: var(--text);
-      font-family: 'DM Mono', monospace;
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
+      background-image: radial-gradient(ellipse at 20% 0%, #0d3a42 0%, transparent 60%), radial-gradient(ellipse at 80% 100%, #062830 0%, transparent 50%);
+      color: var(--text); font-family: 'DM Mono', monospace;
+      min-height: 100vh; display: flex; flex-direction: column;
     }
-
     header {
-      padding: 1.5rem 2.5rem;
-      border-bottom: 1px solid var(--border);
-      display: flex; align-items: center; gap: 1.5rem; flex-wrap: wrap;
+      padding: 1.2rem 2rem; border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 1.2rem; flex-wrap: wrap;
     }
-    .logo { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 1.9rem; letter-spacing: -0.03em; color: var(--accent); line-height: 1; }
+    .logo { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 1.7rem; letter-spacing: -0.03em; color: var(--accent); }
     .logo span { color: var(--accent2); }
-    .tagline { font-size: 0.7rem; color: var(--muted); letter-spacing: 0.1em; text-transform: uppercase; }
-    .privacy-badge { margin-left: auto; font-size: 0.63rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--success); border: 1px solid var(--success); padding: 0.28rem 0.65rem; border-radius: 2px; }
+    .tagline { font-size: 0.65rem; color: var(--muted); letter-spacing: 0.1em; text-transform: uppercase; }
+    .badge { margin-left: auto; font-size: 0.6rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--success); border: 1px solid var(--success); padding: 0.25rem 0.6rem; border-radius: 2px; }
 
-    main { flex: 1; display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); grid-template-rows: auto 1fr; min-height: 0; }
+    main { flex: 1; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: auto 1fr; }
 
-    .search-section { grid-column: 1 / -1; padding: 1.2rem 2.5rem; border-bottom: 1px solid var(--border); display: flex; gap: 1rem; align-items: center; }
+    /* SEARCH */
+    .search-row {
+      grid-column: 1/-1; padding: 1rem 2rem;
+      border-bottom: 1px solid var(--border); display: flex; gap: 1rem; align-items: center;
+    }
     .search-wrap { flex: 1; position: relative; }
     .search-wrap::before { content: '>'; position: absolute; left: 1rem; top: 50%; transform: translateY(-50%); color: var(--accent); pointer-events: none; }
-    #searchInput { width: 100%; background: var(--surface); border: 1px solid var(--border); color: var(--text); font-family: 'DM Mono', monospace; font-size: 1.05rem; padding: 0.85rem 1rem 0.85rem 2.5rem; border-radius: var(--radius); outline: none; transition: border-color 0.2s; }
-    #searchInput:focus { border-color: var(--accent); }
-    #searchInput::placeholder { color: var(--muted); }
-    .stats-bar { font-size: 0.68rem; color: var(--muted); white-space: nowrap; }
-    .stats-bar .hit { color: var(--accent); font-weight: 700; }
+    #q {
+      width: 100%; background: var(--surface); border: 1px solid var(--border);
+      color: var(--text); font-family: inherit; font-size: 1rem;
+      padding: 0.8rem 1rem 0.8rem 2.4rem; border-radius: var(--r); outline: none; transition: border-color 0.2s;
+    }
+    #q:focus { border-color: var(--accent); }
+    #q::placeholder { color: var(--muted); }
+    #stats { font-size: 0.65rem; color: var(--muted); white-space: nowrap; }
+    #stats b { color: var(--accent); }
 
-    .drop-section { border-right: 1px solid var(--border); padding: 1.5rem 2rem; display: flex; flex-direction: column; gap: 1.2rem; overflow-y: auto; }
-    #dropZone { border: 2px dashed var(--border); border-radius: var(--radius); padding: 2.5rem 1.5rem; text-align: center; cursor: pointer; transition: border-color 0.2s, background 0.2s; position: relative; flex-shrink: 0; }
-    #dropZone.dragover { border-color: var(--accent); background: rgba(45,212,191,0.04); }
-    #dropZone input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
-    .drop-icon { font-size: 2.2rem; margin-bottom: 0.6rem; }
-    .drop-label { font-size: 0.78rem; color: var(--muted); line-height: 1.6; }
-    .drop-label strong { color: var(--accent); }
-    .drop-formats { margin-top: 0.4rem; font-size: 0.62rem; color: #1a5a65; letter-spacing: 0.08em; text-transform: uppercase; }
+    /* LEFT */
+    .left { border-right: 1px solid var(--border); padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem; overflow-y: auto; }
 
-    .section-title { font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); }
-    #fileList { display: flex; flex-direction: column; gap: 0.45rem; }
+    #drop {
+      border: 2px dashed var(--border); border-radius: var(--r);
+      padding: 2.5rem 1.5rem; text-align: center; cursor: pointer;
+      position: relative; flex-shrink: 0; transition: border-color 0.2s, background 0.2s;
+    }
+    #drop.over { border-color: var(--accent); background: rgba(45,212,191,0.04); }
+    #drop input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+    #drop .icon { font-size: 2rem; margin-bottom: 0.5rem; }
+    #drop .lbl { font-size: 0.75rem; color: var(--muted); line-height: 1.6; }
+    #drop .lbl strong { color: var(--accent); }
+    #drop .fmt { margin-top: 0.35rem; font-size: 0.58rem; color: #1a5a65; letter-spacing: 0.08em; text-transform: uppercase; }
 
-    .file-item { display: flex; align-items: center; gap: 0.7rem; padding: 0.6rem 0.85rem; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); transition: border-color 0.3s; }
-    .file-item.indexing { border-color: #1a4a52; }
-    .file-item.ready    { border-color: var(--success); }
-    .file-item.error    { border-color: #ef4444; }
-    .file-ext { font-size: 0.58rem; font-weight: 600; text-transform: uppercase; padding: 0.18rem 0.38rem; border-radius: 2px; background: #091e24; color: var(--muted); flex-shrink: 0; min-width: 2.3rem; text-align: center; }
-    .file-name { flex: 1; font-size: 0.75rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .file-status { font-size: 0.62rem; flex-shrink: 0; }
-    .file-status.indexing { color: var(--muted); }
-    .file-status.ready    { color: var(--success); }
-    .file-status.error    { color: #ef4444; }
-    .file-remove { background: none; border: none; color: #1a5560; cursor: pointer; font-size: 0.85rem; padding: 0 0.15rem; transition: color 0.2s; flex-shrink: 0; }
-    .file-remove:hover { color: #ef4444; }
+    .sec-title { font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); }
+    #filelist { display: flex; flex-direction: column; gap: 0.4rem; }
+    .fitem {
+      display: flex; align-items: center; gap: 0.6rem; padding: 0.55rem 0.8rem;
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); transition: border-color 0.3s;
+    }
+    .fitem.loading { border-color: var(--border); }
+    .fitem.ready   { border-color: var(--success); }
+    .fitem.error   { border-color: var(--error); }
+    .fext { font-size: 0.55rem; font-weight: 600; text-transform: uppercase; padding: 0.15rem 0.35rem; border-radius: 2px; background: #091e24; color: var(--muted); flex-shrink: 0; min-width: 2.2rem; text-align: center; }
+    .fname { flex: 1; font-size: 0.72rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .fst { font-size: 0.6rem; flex-shrink: 0; }
+    .fst.loading { color: var(--muted); }
+    .fst.ready   { color: var(--success); }
+    .fst.error   { color: var(--error); }
+    .fdel { background: none; border: none; color: #1a5560; cursor: pointer; font-size: 0.8rem; flex-shrink: 0; transition: color 0.2s; }
+    .fdel:hover { color: var(--error); }
 
-    .progress-wrap { padding: 0 0.85rem 0.5rem; }
-    .progress-bar { height: 2px; background: var(--border); border-radius: 1px; overflow: hidden; }
-    .progress-fill { height: 100%; background: var(--accent); width: 0%; transition: width 0.3s; }
-    .progress-label { font-size: 0.58rem; color: var(--muted); margin-top: 0.2rem; }
+    /* progress bar */
+    .fprog { padding: 0 0.8rem 0.45rem; }
+    .fprog-bar { height: 2px; background: var(--border); border-radius: 1px; overflow: hidden; }
+    .fprog-fill { height: 100%; background: var(--accent); width: 0%; transition: width 0.25s; }
+    .fprog-lbl { font-size: 0.55rem; color: var(--muted); margin-top: 0.15rem; }
 
-    .results-section { padding: 1.5rem 2rem; overflow-y: auto; display: flex; flex-direction: column; gap: 0.9rem; }
-    #resultsList { display: flex; flex-direction: column; gap: 0.65rem; }
-    .result-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; animation: fadeIn 0.18s ease; }
-    @keyframes fadeIn { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; } }
-    .result-card.matched { border-color: var(--accent); }
-    .result-header { display: flex; align-items: center; gap: 0.7rem; padding: 0.65rem 0.9rem; border-bottom: 1px solid var(--border); }
-    .result-filename { flex: 1; font-size: 0.8rem; font-weight: 500; }
-    .result-count { font-size: 0.68rem; background: var(--accent); color: #071a1e; padding: 0.18rem 0.45rem; border-radius: 2px; font-weight: 700; }
-    .result-count.zero { background: transparent; color: var(--muted); border: 1px solid var(--border); font-weight: 400; }
-    .result-snippets { padding: 0.65rem 0.9rem; display: flex; flex-direction: column; gap: 0.45rem; }
-    .snippet { font-size: 0.72rem; color: #7ab8bf; line-height: 1.6; border-left: 2px solid var(--border); padding-left: 0.7rem; }
-    .snippet mark { background: var(--accent); color: #071a1e; padding: 0 0.12rem; border-radius: 1px; }
-    .snippet-page { font-size: 0.58rem; color: var(--muted); margin-bottom: 0.18rem; letter-spacing: 0.05em; text-transform: uppercase; }
+    /* RIGHT */
+    .right { padding: 1.5rem; overflow-y: auto; display: flex; flex-direction: column; gap: 0.8rem; }
+    #results { display: flex; flex-direction: column; gap: 0.6rem; }
 
-    .empty-state { text-align: center; padding: 2.5rem 2rem; color: var(--muted); font-size: 0.78rem; line-height: 1.9; }
-    .empty-state .big { font-size: 1.8rem; margin-bottom: 0.8rem; }
+    .rcard { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); overflow: hidden; animation: fi .15s ease; }
+    @keyframes fi { from { opacity:0; transform:translateY(3px); } to { opacity:1; } }
+    .rcard.hit { border-color: var(--accent); }
+    .rhead { display: flex; align-items: center; gap: 0.6rem; padding: 0.6rem 0.85rem; border-bottom: 1px solid var(--border); }
+    .rname { flex: 1; font-size: 0.78rem; font-weight: 500; }
+    .rcnt { font-size: 0.65rem; background: var(--accent); color: #071a1e; padding: 0.15rem 0.42rem; border-radius: 2px; font-weight: 700; }
+    .rcnt.zero { background: transparent; color: var(--muted); border: 1px solid var(--border); font-weight: 400; }
+    .rsnips { padding: 0.6rem 0.85rem; display: flex; flex-direction: column; gap: 0.4rem; }
+    .snip { font-size: 0.7rem; color: #7ab8bf; line-height: 1.6; border-left: 2px solid var(--border); padding-left: 0.65rem; }
+    .snip mark { background: var(--accent); color: #071a1e; padding: 0 0.1rem; border-radius: 1px; }
+    .snip-pg { font-size: 0.55rem; color: var(--muted); margin-bottom: 0.15rem; text-transform: uppercase; letter-spacing: 0.05em; }
 
-    .spinner { display: inline-block; width: 9px; height: 9px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.55s linear infinite; vertical-align: middle; }
+    .empty { text-align: center; padding: 2rem; color: var(--muted); font-size: 0.75rem; line-height: 1.9; }
+    .empty .big { font-size: 1.6rem; margin-bottom: 0.6rem; }
+    .spin { display: inline-block; width: 8px; height: 8px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .5s linear infinite; vertical-align: middle; }
     @keyframes spin { to { transform: rotate(360deg); } }
 
-    /* Debug console */
-    #debugPanel {
-      position: fixed; bottom: 0; right: 0; width: 420px; max-height: 180px;
-      background: #020d0f; border-top: 1px solid var(--border); border-left: 1px solid var(--border);
-      font-size: 0.6rem; font-family: monospace; overflow-y: auto; padding: 0.5rem;
-      color: #4d8a92; z-index: 9999; display: none;
-    }
-    #debugPanel.visible { display: block; }
-    #debugPanel .d-ok  { color: var(--success); }
-    #debugPanel .d-err { color: #ef4444; }
-    #debugPanel .d-info { color: var(--accent); }
-    #debugToggle { position: fixed; bottom: 4px; right: 4px; background: #020d0f; border: 1px solid var(--border); color: var(--muted); font-size: 0.55rem; padding: 0.2rem 0.4rem; cursor: pointer; z-index: 10000; border-radius: 2px; }
+    footer { border-top: 1px solid var(--border); padding: 0.55rem 2rem; font-size: 0.58rem; color: #2a6570; }
 
-    footer { border-top: 1px solid var(--border); padding: 0.65rem 2.5rem; display: flex; gap: 2rem; font-size: 0.6rem; color: #2a6570; letter-spacing: 0.04em; }
-    footer span { color: #3a7a85; }
-
-    @media (max-width: 768px) {
+    @media (max-width: 700px) {
       main { grid-template-columns: 1fr; }
-      .drop-section { border-right: none; border-bottom: 1px solid var(--border); }
+      .left { border-right: none; border-bottom: 1px solid var(--border); }
     }
   </style>
 </head>
@@ -135,404 +122,264 @@
 <header>
   <div class="logo">Doc<span>Scan</span></div>
   <div class="tagline">Recherche instantanée dans vos documents</div>
-  <div class="privacy-badge">✓ 100% local — rien enregistré</div>
+  <div class="badge">✓ 100% local — rien enregistré</div>
 </header>
 
 <main>
-  <div class="search-section">
+  <div class="search-row">
     <div class="search-wrap">
-      <input type="text" id="searchInput" placeholder="Rechercher un mot, une date, un code..." autocomplete="off" spellcheck="false" />
+      <input id="q" type="text" placeholder="Rechercher un mot, une date, un code..." autocomplete="off" spellcheck="false" />
     </div>
-    <div class="stats-bar" id="statsBar">— aucun document chargé</div>
+    <div id="stats">— aucun document</div>
   </div>
 
-  <div class="drop-section">
-    <div id="dropZone">
-      <input type="file" id="fileInput" multiple accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.bmp,.tif,.tiff,.txt,.csv,.md,.html" />
-      <div class="drop-icon">📂</div>
-      <div class="drop-label"><strong>Glissez vos fichiers ici</strong><br>ou cliquez pour sélectionner</div>
-      <div class="drop-formats">PDF · JPG · PNG · GIF · WEBP · TXT · CSV · MD</div>
+  <div class="left">
+    <div id="drop">
+      <input type="file" id="finput" multiple accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.bmp,.tif,.tiff,.txt,.csv,.md,.html" />
+      <div class="icon">📂</div>
+      <div class="lbl"><strong>Glissez vos fichiers ici</strong><br>ou cliquez pour sélectionner</div>
+      <div class="fmt">PDF · JPG · PNG · GIF · WEBP · TXT · CSV · MD</div>
     </div>
-    <div class="section-title">Documents chargés</div>
-    <div id="fileList">
-      <div class="empty-state" style="padding:0.8rem;font-size:0.72rem;">Aucun document pour l'instant.</div>
-    </div>
+    <div class="sec-title">Documents chargés</div>
+    <div id="filelist"><div class="empty" style="padding:.6rem;font-size:.7rem;">Aucun document.</div></div>
   </div>
 
-  <div class="results-section">
-    <div class="section-title">Résultats</div>
-    <div id="resultsList">
-      <div class="empty-state">
-        <div class="big">🔍</div>
-        Glissez des documents puis tapez votre recherche.<br>
-        Les résultats apparaissent instantanément.
-      </div>
+  <div class="right">
+    <div class="sec-title">Résultats</div>
+    <div id="results">
+      <div class="empty"><div class="big">🔍</div>Glissez des documents<br>puis tapez votre recherche.</div>
     </div>
   </div>
 </main>
 
-<footer>
-  <span>DocScan</span>
-  Traitement 100% local · PDF.js + Tesseract.js · Rien n'est enregistré
-</footer>
-
-<div id="debugPanel"></div>
-<button id="debugToggle" onclick="toggleDebug()">debug</button>
+<footer>DocScan · traitement 100% local · PDF.js + Tesseract.js · fermez l'onglet pour tout effacer</footer>
 
 <script>
-// ── Debug logger ─────────────────────────────────────────────────────────────
-const debugPanel = document.getElementById('debugPanel');
-function log(msg, type = '') {
-  console.log('[DocScan]', msg);
-  const line = document.createElement('div');
-  if (type) line.className = 'd-' + type;
-  line.textContent = new Date().toLocaleTimeString('fr') + ' ' + msg;
-  debugPanel.appendChild(line);
-  debugPanel.scrollTop = debugPanel.scrollHeight;
-}
-function toggleDebug() {
-  debugPanel.classList.toggle('visible');
-}
-
-// ── PDF.js ───────────────────────────────────────────────────────────────────
 pdfjsLib.GlobalWorkerOptions.workerSrc =
   'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
-// ── Tesseract worker singleton ────────────────────────────────────────────────
-let _worker = null;
-let _workerReady = false;
-
-async function getWorker() {
-  if (_worker && _workerReady) return _worker;
-
-  log('Initialisation Tesseract...', 'info');
-
-  // On tente d'abord avec les langues fr+en
-  // Si ça échoue (CORS sur langPath), on retombe sur eng seul
-  try {
-    _worker = await Tesseract.createWorker(['fra', 'eng'], 1, {
-      langPath: 'https://tessdata.projectnaptha.com/4.0.0_fast',
-      cacheMethod: 'none',
-      logger: m => {
-        if (m.status === 'recognizing text') {
-          const pct = Math.round((m.progress || 0) * 100);
-          updateProgress(currentOcrId, pct, `OCR ${pct}%`);
-        } else if (m.status && m.progress < 1) {
-          updateProgress(currentOcrId, Math.round((m.progress || 0) * 100), m.status);
-        }
+// ── Tesseract worker (singleton) ─────────────────────────────────────────────
+let tWorker = null;
+async function getOCRWorker() {
+  if (tWorker) return tWorker;
+  tWorker = await Tesseract.createWorker(['fra', 'eng'], 1, {
+    langPath: 'https://tessdata.projectnaptha.com/4.0.0_fast',
+    cacheMethod: 'none',
+    logger: m => {
+      if (typeof m.progress === 'number') {
+        setProgress(activeId, Math.round(m.progress * 100), m.status || 'OCR…');
       }
-    });
-    _workerReady = true;
-    log('Tesseract prêt (fra+eng)', 'ok');
-  } catch (e) {
-    log('Échec fra+eng, tentative eng seul... ' + e.message, 'err');
-    _worker = await Tesseract.createWorker(['eng'], 1, {
-      langPath: 'https://tessdata.projectnaptha.com/4.0.0_fast',
-      cacheMethod: 'none',
-      logger: () => {}
-    });
-    _workerReady = true;
-    log('Tesseract prêt (eng)', 'ok');
-  }
-  return _worker;
+    }
+  });
+  return tWorker;
 }
 
 // ── State ─────────────────────────────────────────────────────────────────────
 const docs = {};
-let docIdCounter  = 0;
-let searchTimeout = null;
-let currentOcrId  = null;
-
-// ── DOM ───────────────────────────────────────────────────────────────────────
-const dropZone    = document.getElementById('dropZone');
-const fileInput   = document.getElementById('fileInput');
-const fileListEl  = document.getElementById('fileList');
-const searchInput = document.getElementById('searchInput');
-const resultsList = document.getElementById('resultsList');
-const statsBar    = document.getElementById('statsBar');
+let uid = 0, activeId = null, searchTmo = null;
 
 // ── Drag & drop ───────────────────────────────────────────────────────────────
-dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
-dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
-dropZone.addEventListener('drop', e => {
-  e.preventDefault(); dropZone.classList.remove('dragover');
-  handleFiles(Array.from(e.dataTransfer.files));
-});
-fileInput.addEventListener('change', () => {
-  handleFiles(Array.from(fileInput.files)); fileInput.value = '';
-});
+const drop   = document.getElementById('drop');
+const finput = document.getElementById('finput');
+drop.addEventListener('dragover',  e => { e.preventDefault(); drop.classList.add('over'); });
+drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('over'); load(Array.from(e.dataTransfer.files)); });
+finput.addEventListener('change', () => { load(Array.from(finput.files)); finput.value = ''; });
 
-// ── File dispatch ─────────────────────────────────────────────────────────────
-async function handleFiles(files) {
-  for (const file of files) {
-    const id  = ++docIdCounter;
-    const ext = file.name.split('.').pop().toLowerCase();
-    docs[id]  = { id, name: file.name, ext, text: '', pages: [], status: 'indexing', progress: 0, progressLabel: 'lecture…' };
-    log(`Fichier reçu: ${file.name} (${ext}, ${Math.round(file.size/1024)}KB)`, 'info');
-    renderFileList();
+// ── Load files ────────────────────────────────────────────────────────────────
+async function load(files) {
+  for (const f of files) {
+    const id  = ++uid;
+    const ext = f.name.split('.').pop().toLowerCase();
+    docs[id]  = { id, name: f.name, ext, text: '', pages: [], status: 'loading', prog: 0, progLbl: '…' };
+    renderList();
     try {
-      await processFile(id, file, ext);
+      if (ext === 'pdf')                                    await loadPDF(id, f);
+      else if (['txt','csv','md','html','htm'].includes(ext)) await loadText(id, f);
+      else                                                   await loadImage(id, f);
       docs[id].status = 'ready';
-      log(`✓ ${file.name} → ${docs[id].text.length} caractères extraits`, 'ok');
-    } catch (err) {
+    } catch (e) {
       docs[id].status = 'error';
-      log(`✗ ${file.name} → ${err.message}`, 'err');
+      console.error(f.name, e);
     }
-    renderFileList();
-    runSearch();
-  }
-}
-
-async function processFile(id, file, ext) {
-  if (ext === 'pdf') {
-    await processPDF(id, file);
-  } else if (['txt','csv','md','html','htm'].includes(ext)) {
-    await processText(id, file);
-  } else {
-    await processImage(id, file, ext);
+    renderList();
+    search();
   }
 }
 
 // ── PDF ───────────────────────────────────────────────────────────────────────
-async function processPDF(id, file) {
-  updateProgress(id, 10, 'chargement PDF…');
-  const buf = await file.arrayBuffer();
-  const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
-  log(`PDF ouvert: ${pdf.numPages} page(s)`, 'info');
-
-  const pages  = [];
-  let fullText = '';
-
+async function loadPDF(id, file) {
+  setProgress(id, 5, 'chargement…');
+  const buf  = await file.arrayBuffer();
+  const pdf  = await pdfjsLib.getDocument({ data: buf }).promise;
+  const pages = [];
+  let full = '';
   for (let p = 1; p <= pdf.numPages; p++) {
-    updateProgress(id, 10 + Math.round((p / pdf.numPages) * 40), `page ${p}/${pdf.numPages}`);
-    const page    = await pdf.getPage(p);
-    const content = await page.getTextContent();
-    const text    = content.items.map(i => i.str).join(' ').trim();
-    pages.push({ page: p, text });
-    fullText += ' ' + text;
+    setProgress(id, 5 + Math.round(p / pdf.numPages * 50), `page ${p}/${pdf.numPages}`);
+    const pg  = await pdf.getPage(p);
+    const txt = (await pg.getTextContent()).items.map(i => i.str).join(' ').trim();
+    pages.push({ page: p, text: txt });
+    full += ' ' + txt;
+  }
+  full = full.replace(/\s+/g, ' ').trim();
+
+  // PDF with real text
+  if (full.length > 60) {
+    docs[id].pages = pages; docs[id].text = full; return;
   }
 
-  const textClean = fullText.replace(/\s+/g, ' ').trim();
-  log(`Texte natif PDF: "${textClean.slice(0, 80)}…" (${textClean.length} chars)`, 'info');
-
-  // Vrai texte natif
-  if (textClean.length > 80) {
-    docs[id].pages = pages;
-    docs[id].text  = textClean;
-    return;
-  }
-
-  // PDF scanné → OCR page par page
-  log('PDF scanné détecté → OCR', 'info');
+  // Scanned PDF → OCR each page
   const ocrPages = [];
   for (let p = 1; p <= Math.min(pdf.numPages, 15); p++) {
-    const page     = await pdf.getPage(p);
-    const viewport = page.getViewport({ scale: 2.0 });
-    const canvas   = document.createElement('canvas');
-    canvas.width   = viewport.width;
-    canvas.height  = viewport.height;
-    await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
-    log(`OCR page ${p}…`, 'info');
-    const text = await runOCR(id, canvas);
-    log(`Page ${p} OCR: "${text.slice(0,60)}…"`, 'ok');
-    ocrPages.push({ page: p, text });
+    setProgress(id, 55 + Math.round(p / pdf.numPages * 45), `OCR p.${p}`);
+    const pg  = await pdf.getPage(p);
+    const vp  = pg.getViewport({ scale: 2.0 });
+    const cvs = Object.assign(document.createElement('canvas'), { width: vp.width, height: vp.height });
+    await pg.render({ canvasContext: cvs.getContext('2d'), viewport: vp }).promise;
+    ocrPages.push({ page: p, text: await ocr(id, cvs) });
   }
   docs[id].pages = ocrPages;
   docs[id].text  = ocrPages.map(p => p.text).join(' ');
 }
 
-// ── Image ─────────────────────────────────────────────────────────────────────
-async function processImage(id, file, ext) {
-  updateProgress(id, 5, 'préparation…');
-  let source;
+// ── Image (JPG PNG WEBP GIF BMP TIFF) ────────────────────────────────────────
+async function loadImage(id, file) {
+  setProgress(id, 10, 'décodage image…');
 
-  // GIF animé ou formats non natifs : rasteriser via <img> + canvas
-  if (['gif','bmp','tiff','tif','webp'].includes(ext)) {
-    source = await rasterize(file);
-    log(`Image rasterisée: ${source.width}×${source.height}`, 'info');
-  } else {
-    source = file;
-  }
-
-  const text = await runOCR(id, source);
-  log(`Image OCR: "${text.slice(0,80)}…"`, 'ok');
-  docs[id].pages = [{ page: 1, text }];
-  docs[id].text  = text;
-}
-
-function rasterize(file) {
-  return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(file);
-    const img = new Image();
-    img.onload = () => {
-      const c = document.createElement('canvas');
-      // Scale up small images for better OCR
-      const scale = Math.max(1, Math.min(4, 1200 / Math.max(img.naturalWidth, img.naturalHeight)));
-      c.width  = img.naturalWidth  * scale;
-      c.height = img.naturalHeight * scale;
-      const ctx = c.getContext('2d');
-      ctx.imageSmoothingEnabled = false;
-      ctx.scale(scale, scale);
-      ctx.drawImage(img, 0, 0);
-      URL.revokeObjectURL(url);
-      resolve(c);
-    };
-    img.onerror = reject;
-    img.src = url;
-  });
-}
-
-// ── Tesseract OCR ─────────────────────────────────────────────────────────────
-async function runOCR(id, source) {
-  currentOcrId = id;
+  // createImageBitmap handles ALL formats including animated GIF (takes first frame)
+  let bitmap;
   try {
-    const worker = await getWorker();
-    const result = await worker.recognize(source);
-    currentOcrId = null;
-    return result.data.text || '';
-  } catch (err) {
-    currentOcrId = null;
-    log('OCR échoué: ' + err.message, 'err');
-    throw err;
+    bitmap = await createImageBitmap(file);
+  } catch (e) {
+    // Fallback: load via <img> tag
+    bitmap = await new Promise((res, rej) => {
+      const img = new Image();
+      img.onload = () => res(img);
+      img.onerror = rej;
+      img.src = URL.createObjectURL(file);
+    });
   }
-}
 
-// ── Plain text ─────────────────────────────────────────────────────────────────
-async function processText(id, file) {
-  const text = await file.text();
+  // Draw onto canvas, scaling up small images for better OCR
+  const MAX = 1600;
+  const scale = Math.min(MAX / Math.max(bitmap.width || bitmap.naturalWidth, 1), 4);
+  const w = Math.round((bitmap.width || bitmap.naturalWidth) * scale);
+  const h = Math.round((bitmap.height || bitmap.naturalHeight) * scale);
+  const cvs = Object.assign(document.createElement('canvas'), { width: w, height: h });
+  const ctx = cvs.getContext('2d');
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(bitmap, 0, 0, w, h);
+
+  setProgress(id, 30, 'OCR…');
+  const text = await ocr(id, cvs);
   docs[id].pages = [{ page: 1, text }];
   docs[id].text  = text;
 }
 
-// ── Progress ──────────────────────────────────────────────────────────────────
-function updateProgress(id, pct, label) {
-  if (!id || !docs[id]) return;
-  docs[id].progress      = pct;
-  docs[id].progressLabel = label;
-  // Update DOM directly (no full re-render)
-  const fill = document.querySelector(`[data-id="${id}"] .progress-fill`);
-  const lbl  = document.querySelector(`[data-id="${id}"] .progress-label`);
-  const st   = document.querySelector(`[data-id="${id}"] .file-status`);
+// ── Text ──────────────────────────────────────────────────────────────────────
+async function loadText(id, file) {
+  const text = await file.text();
+  docs[id].pages = [{ page: 1, text }]; docs[id].text = text;
+}
+
+// ── OCR via Tesseract ─────────────────────────────────────────────────────────
+async function ocr(id, canvas) {
+  activeId = id;
+  const w = await getOCRWorker();
+  const r = await w.recognize(canvas);
+  activeId = null;
+  return r.data.text || '';
+}
+
+// ── Progress helper ───────────────────────────────────────────────────────────
+function setProgress(id, pct, lbl) {
+  if (!docs[id]) return;
+  docs[id].prog = pct; docs[id].progLbl = lbl;
+  const fill = document.querySelector(`[data-id="${id}"] .fprog-fill`);
+  const lble = document.querySelector(`[data-id="${id}"] .fprog-lbl`);
+  const ste  = document.querySelector(`[data-id="${id}"] .fst`);
   if (fill) fill.style.width = pct + '%';
-  if (lbl)  lbl.textContent  = label;
-  if (st)   st.textContent   = label;
+  if (lble) lble.textContent = lbl;
+  if (ste && docs[id].status === 'loading') ste.textContent = lbl;
 }
 
 // ── Render file list ──────────────────────────────────────────────────────────
-function renderFileList() {
+function renderList() {
   const ids = Object.keys(docs);
-  if (!ids.length) {
-    fileListEl.innerHTML = '<div class="empty-state" style="padding:0.8rem;font-size:0.72rem;">Aucun document pour l\'instant.</div>';
-    statsBar.innerHTML = '— aucun document chargé';
-    return;
-  }
-  const ready = ids.filter(id => docs[id].status === 'ready').length;
-  statsBar.innerHTML = `<span class="hit">${ready}</span> / ${ids.length} doc${ids.length > 1 ? 's' : ''} indexé${ready > 1 ? 's' : ''}`;
+  const ready = ids.filter(i => docs[i].status === 'ready').length;
+  document.getElementById('stats').innerHTML =
+    ids.length ? `<b>${ready}</b> / ${ids.length} doc${ids.length > 1 ? 's' : ''} indexé${ready > 1 ? 's' : ''}` : '— aucun document';
 
-  fileListEl.innerHTML = ids.map(id => {
-    const d  = docs[id];
-    const stIcon = d.status === 'indexing' ? '<span class="spinner"></span>' : d.status === 'ready' ? '✓' : '✗';
-    const stClass = d.status;
-    const stLabel = d.status === 'indexing' ? (d.progressLabel || 'lecture…') : d.status === 'ready' ? 'prêt' : 'erreur';
-    const progressHtml = d.status === 'indexing' ? `
-      <div class="progress-wrap" data-id="${id}">
-        <div class="progress-bar"><div class="progress-fill" style="width:${d.progress||0}%"></div></div>
-        <div class="progress-label">${d.progressLabel || ''}</div>
-      </div>` : '';
-    return `
-      <div class="file-item ${d.status}" data-id="${id}">
-        <span class="file-ext">${d.ext}</span>
-        <span class="file-name" title="${d.name}">${d.name}</span>
-        <span class="file-status ${stClass}">${stIcon} ${stLabel}</span>
-        <button class="file-remove" onclick="removeDoc(${id})" title="Supprimer">✕</button>
-      </div>
-      ${progressHtml}`;
-  }).join('');
+  document.getElementById('filelist').innerHTML = ids.length ? ids.map(id => {
+    const d = docs[id];
+    const icon = d.status === 'loading' ? '<span class="spin"></span>' : d.status === 'ready' ? '✓' : '✗';
+    const lbl  = d.status === 'loading' ? d.progLbl : d.status === 'ready' ? 'prêt' : 'erreur';
+    const prog = d.status === 'loading' ? `<div class="fprog" data-id="${id}"><div class="fprog-bar"><div class="fprog-fill" style="width:${d.prog}%"></div></div><div class="fprog-lbl">${d.progLbl}</div></div>` : '';
+    return `<div class="fitem ${d.status}" data-id="${id}">
+      <span class="fext">${d.ext}</span>
+      <span class="fname" title="${d.name}">${d.name}</span>
+      <span class="fst ${d.status}">${icon} ${lbl}</span>
+      <button class="fdel" onclick="del(${id})">✕</button>
+    </div>${prog}`;
+  }).join('') : '<div class="empty" style="padding:.6rem;font-size:.7rem;">Aucun document.</div>';
 }
 
-function removeDoc(id) {
-  delete docs[id]; renderFileList(); runSearch();
-}
+function del(id) { delete docs[id]; renderList(); search(); }
 
 // ── Search ────────────────────────────────────────────────────────────────────
-searchInput.addEventListener('input', () => {
-  clearTimeout(searchTimeout);
-  searchTimeout = setTimeout(runSearch, 100);
-});
+document.getElementById('q').addEventListener('input', () => { clearTimeout(searchTmo); searchTmo = setTimeout(search, 80); });
 
-function runSearch() {
-  const query = searchInput.value.trim();
-  const ids   = Object.keys(docs);
+function search() {
+  const q    = document.getElementById('q').value.trim();
+  const res  = document.getElementById('results');
+  const ids  = Object.keys(docs).filter(i => docs[i].status === 'ready');
 
-  if (!ids.length) {
-    resultsList.innerHTML = '<div class="empty-state"><div class="big">🔍</div>Glissez des documents puis tapez votre recherche.</div>';
-    return;
-  }
-  if (!query) {
-    resultsList.innerHTML = '<div class="empty-state"><div class="big">✏️</div>Tapez un mot ou une expression<br>pour lancer la recherche.</div>';
-    return;
-  }
+  if (!Object.keys(docs).length) { res.innerHTML = '<div class="empty"><div class="big">🔍</div>Glissez des documents<br>puis tapez votre recherche.</div>'; return; }
+  if (!q) { res.innerHTML = '<div class="empty"><div class="big">✏️</div>Tapez un mot ou une expression.</div>'; return; }
 
-  const re    = new RegExp(escapeRegex(query), 'gi');
-  const cards = ids
-    .filter(id => docs[id].status === 'ready')
-    .map(id => {
-      const d          = docs[id];
-      const matchCount = (d.text.match(re) || []).length;
-      return { d, matchCount, snippets: extractSnippets(d, query, 3) };
-    })
-    .sort((a, b) => b.matchCount - a.matchCount);
+  const re    = new RegExp(esc(q), 'gi');
+  const cards = ids.map(id => {
+    const d = docs[id];
+    const n = (d.text.match(re) || []).length;
+    return { d, n, snips: snippets(d, q) };
+  }).sort((a, b) => b.n - a.n);
 
-  if (!cards.length) {
-    resultsList.innerHTML = '<div class="empty-state">Indexation en cours… patientez.</div>';
-    return;
-  }
+  const total = cards.reduce((s, c) => s + c.n, 0);
+  const nhits = cards.filter(c => c.n > 0).length;
+  document.getElementById('stats').innerHTML =
+    `<b>${total}</b> occurrence${total > 1 ? 's' : ''} dans <b>${nhits}</b> doc${nhits > 1 ? 's' : ''} · ${ids.length} indexé${ids.length > 1 ? 's' : ''}`;
 
-  const totalHits  = cards.reduce((s, c) => s + c.matchCount, 0);
-  const docsHits   = cards.filter(c => c.matchCount > 0).length;
-  const readyCount = Object.values(docs).filter(d => d.status === 'ready').length;
-  statsBar.innerHTML = `<span class="hit">${totalHits}</span> occurrence${totalHits > 1 ? 's' : ''} dans <span class="hit">${docsHits}</span> doc${docsHits > 1 ? 's' : ''} · ${readyCount} indexé${readyCount > 1 ? 's' : ''}`;
-
-  resultsList.innerHTML = cards.map(({ d, matchCount, snippets }) => {
-    const matched  = matchCount > 0;
-    const countEl  = matched
-      ? `<span class="result-count">${matchCount} résultat${matchCount > 1 ? 's' : ''}</span>`
-      : `<span class="result-count zero">absent</span>`;
-    const snipHtml = snippets.map(s =>
-      `<div class="snippet"><div class="snippet-page">${s.label}</div>${s.html}</div>`
-    ).join('');
-    return `<div class="result-card ${matched ? 'matched' : ''}">
-      <div class="result-header">
-        <span class="file-ext">${d.ext}</span>
-        <span class="result-filename">${d.name}</span>
-        ${countEl}
-      </div>
-      ${snipHtml ? `<div class="result-snippets">${snipHtml}</div>` : ''}
+  res.innerHTML = cards.map(({ d, n, snips }) => {
+    const cnt = n > 0
+      ? `<span class="rcnt">${n} résultat${n > 1 ? 's' : ''}</span>`
+      : `<span class="rcnt zero">absent</span>`;
+    const sh = snips.map(s => `<div class="snip"><div class="snip-pg">${s.lbl}</div>${s.html}</div>`).join('');
+    return `<div class="rcard ${n > 0 ? 'hit' : ''}">
+      <div class="rhead"><span class="fext">${d.ext}</span><span class="rname">${d.name}</span>${cnt}</div>
+      ${sh ? `<div class="rsnips">${sh}</div>` : ''}
     </div>`;
   }).join('');
 }
 
-function extractSnippets(doc, query, max) {
-  const re = new RegExp(escapeRegex(query), 'gi');
-  const snippets = [];
+function snippets(doc, q) {
+  const re = new RegExp(esc(q), 'gi');
+  const out = [];
   for (const pg of doc.pages) {
     let m; re.lastIndex = 0;
-    while ((m = re.exec(pg.text)) !== null && snippets.length < max) {
-      const start = Math.max(0, m.index - 90);
-      const end   = Math.min(pg.text.length, m.index + query.length + 90);
-      let ex      = pg.text.slice(start, end).replace(/\s+/g, ' ').trim();
-      if (start > 0) ex = '…' + ex;
-      if (end < pg.text.length) ex += '…';
-      const html  = ex.replace(new RegExp(escapeRegex(query), 'gi'), x => `<mark>${x}</mark>`);
-      snippets.push({ label: doc.pages.length > 1 ? `Page ${pg.page}` : 'Extrait', html });
+    while ((m = re.exec(pg.text)) !== null && out.length < 3) {
+      const s = Math.max(0, m.index - 80), e = Math.min(pg.text.length, m.index + q.length + 80);
+      let ex = pg.text.slice(s, e).replace(/\s+/g, ' ').trim();
+      if (s > 0) ex = '…' + ex;
+      if (e < pg.text.length) ex += '…';
+      const html = ex.replace(new RegExp(esc(q), 'gi'), x => `<mark>${x}</mark>`);
+      out.push({ lbl: doc.pages.length > 1 ? `page ${pg.page}` : 'extrait', html });
     }
   }
-  return snippets;
+  return out;
 }
 
-function escapeRegex(s) {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
+function esc(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 </script>
 </body>
 </html>
