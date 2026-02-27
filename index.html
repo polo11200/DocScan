@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>DocScan</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <!-- Tesseract v4 — worker + core + lang doivent être de la MÊME version -->
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4.1.4/dist/tesseract.min.js"></script>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=DM+Mono:wght@400;500&display=swap');
     :root {
@@ -23,9 +25,7 @@
     .logo span{color:var(--acc2)}
     .tag{font-size:.65rem;color:var(--mut);letter-spacing:.1em;text-transform:uppercase}
     .bdg{margin-left:auto;font-size:.6rem;letter-spacing:.08em;text-transform:uppercase;color:var(--ok);border:1px solid var(--ok);padding:.25rem .6rem;border-radius:2px}
-
     main{flex:1;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:auto 1fr}
-
     .srow{grid-column:1/-1;padding:1rem 2rem;border-bottom:1px solid var(--brd);display:flex;gap:1rem;align-items:center}
     .swrap{flex:1;position:relative}
     .swrap::before{content:'>';position:absolute;left:1rem;top:50%;transform:translateY(-50%);color:var(--acc);pointer-events:none}
@@ -34,7 +34,6 @@
     #q::placeholder{color:var(--mut)}
     #stats{font-size:.65rem;color:var(--mut);white-space:nowrap}
     #stats b{color:var(--acc)}
-
     .left{border-right:1px solid var(--brd);padding:1.5rem;display:flex;flex-direction:column;gap:1rem;overflow-y:auto}
     #drop{border:2px dashed var(--brd);border-radius:var(--r);padding:2.5rem 1.5rem;text-align:center;cursor:pointer;position:relative;flex-shrink:0;transition:border-color .2s,background .2s}
     #drop.over{border-color:var(--acc);background:rgba(45,212,191,.04)}
@@ -46,18 +45,17 @@
     .stit{font-size:.6rem;text-transform:uppercase;letter-spacing:.1em;color:var(--mut)}
     #flist{display:flex;flex-direction:column;gap:.4rem}
     .fi{display:flex;align-items:center;gap:.6rem;padding:.55rem .8rem;background:var(--surf);border:1px solid var(--brd);border-radius:var(--r);transition:border-color .3s}
-    .fi.loading{border-color:var(--brd)} .fi.ready{border-color:var(--ok)} .fi.error{border-color:var(--err)}
+    .fi.loading{border-color:var(--brd)}.fi.ready{border-color:var(--ok)}.fi.error{border-color:var(--err)}
     .fext{font-size:.55rem;font-weight:600;text-transform:uppercase;padding:.15rem .35rem;border-radius:2px;background:#091e24;color:var(--mut);flex-shrink:0;min-width:2.2rem;text-align:center}
     .fn{flex:1;font-size:.72rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .fs{font-size:.6rem;flex-shrink:0}
-    .fs.loading{color:var(--mut)} .fs.ready{color:var(--ok)} .fs.error{color:var(--err)}
+    .fs.loading{color:var(--mut)}.fs.ready{color:var(--ok)}.fs.error{color:var(--err)}
     .fdel{background:none;border:none;color:#1a5560;cursor:pointer;font-size:.8rem;flex-shrink:0;transition:color .2s}
     .fdel:hover{color:var(--err)}
     .fpw{padding:0 .8rem .45rem}
     .fpb{height:2px;background:var(--brd);border-radius:1px;overflow:hidden}
     .fpf{height:100%;background:var(--acc);width:0%;transition:width .25s}
     .fpl{font-size:.55rem;color:var(--mut);margin-top:.15rem}
-
     .right{padding:1.5rem;overflow-y:auto;display:flex;flex-direction:column;gap:.8rem}
     #res{display:flex;flex-direction:column;gap:.6rem}
     .rc{background:var(--surf);border:1px solid var(--brd);border-radius:var(--r);overflow:hidden;animation:fi .15s ease}
@@ -108,60 +106,52 @@
 <footer>DocScan · traitement 100% local · PDF.js + Tesseract.js · fermez l'onglet pour tout effacer</footer>
 
 <script>
+// ── PDF.js ────────────────────────────────────────────────────────────────────
 pdfjsLib.GlobalWorkerOptions.workerSrc =
   'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
-// ── Tesseract — chargé dynamiquement une seule fois ──────────────────────────
-// On utilise la version 5 avec import ESM pour éviter les problèmes de worker
-let tessReady = false;
-let tessWorker = null;
-
-async function initTess() {
-  if (tessReady) return;
-  // Charge Tesseract.js v5 via ESM (pas de worker blob, utilise SharedArrayBuffer ou fallback)
-  const { createWorker } = await import('https://cdn.jsdelivr.net/npm/tesseract.js@5.1.0/dist/esm/tesseract.esm.min.js');
-  tessWorker = await createWorker(['fra', 'eng'], 1, {
-    workerPath: 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.0/dist/worker.min.js',
-    corePath:   'https://cdn.jsdelivr.net/npm/tesseract.js-core@5.1.0/tesseract-core-simd-lstm.wasm.js',
-    langPath:   'https://cdn.jsdelivr.net/npm/tesseract.js-data@5.1.0',
-    logger: m => {
+// ── Tesseract v4 — worker singleton, initialisé à la demande ─────────────────
+// IMPORTANT : workerPath, corePath et langPath doivent tous pointer sur
+//             la même version (4.1.4 / 4.0.4 / 4.0.0_fast)
+let TW = null;
+async function getTW() {
+  if (TW) return TW;
+  TW = await Tesseract.createWorker('eng+fra', 1, {
+    workerPath : 'https://cdn.jsdelivr.net/npm/tesseract.js@4.1.4/dist/worker.min.js',
+    corePath   : 'https://cdn.jsdelivr.net/npm/tesseract.js-core@4.0.4/tesseract-core-simd-lstm.wasm.js',
+    langPath   : 'https://tessdata.projectnaptha.com/4.0.0_fast',
+    logger     : m => {
       if (typeof m.progress === 'number')
         setP(activeId, Math.round(m.progress * 100), m.status || 'OCR…');
     }
   });
-  tessReady = true;
-}
-
-async function runOCR(canvas) {
-  await initTess();
-  const r = await tessWorker.recognize(canvas);
-  return r.data.text || '';
+  return TW;
 }
 
 // ── State ─────────────────────────────────────────────────────────────────────
 const docs = {};
 let uid = 0, activeId = null, stmo = null;
 
-// ── Drop & input ──────────────────────────────────────────────────────────────
+// ── Drag & drop ───────────────────────────────────────────────────────────────
 const drop = document.getElementById('drop');
-const fin  = document.getElementById('fi');
+const fi   = document.getElementById('fi');
 drop.addEventListener('dragover',  e => { e.preventDefault(); drop.classList.add('over'); });
-drop.addEventListener('dragleave', () => drop.classList.remove('over'));
-drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('over'); go(Array.from(e.dataTransfer.files)); });
-fin.addEventListener('change', () => { go(Array.from(fin.files)); fin.value = ''; });
+drop.addEventListener('dragleave', ()  => drop.classList.remove('over'));
+drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('over'); go(e.dataTransfer.files); });
+fi.addEventListener('change', () => { go(fi.files); fi.value = ''; });
 
-// ── Main loader ───────────────────────────────────────────────────────────────
+// ── Load files ────────────────────────────────────────────────────────────────
 async function go(files) {
-  for (const f of files) {
+  for (const f of [...files]) {
     const id  = ++uid;
     const ext = f.name.split('.').pop().toLowerCase();
     docs[id]  = { id, name: f.name, ext, text: '', pages: [], status: 'loading', prog: 0, plbl: '…' };
     render();
     try {
-      if (ext === 'pdf')                                     await doPDF(id, f);
+      if (ext === 'pdf')                                      await doPDF(id, f);
       else if (['txt','csv','md','html','htm'].includes(ext)) await doText(id, f);
       else if (['jpg','jpeg','png'].includes(ext))            await doImg(id, f);
-      else throw new Error('Format non supporté: ' + ext);
+      else throw new Error('Format non supporté');
       docs[id].status = 'ready';
     } catch(e) {
       docs[id].status = 'error';
@@ -174,10 +164,11 @@ async function go(files) {
 
 // ── PDF ───────────────────────────────────────────────────────────────────────
 async function doPDF(id, file) {
-  setP(id, 5, 'chargement PDF…');
+  setP(id, 5, 'lecture PDF…');
   const buf = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
   const pages = []; let full = '';
+
   for (let p = 1; p <= pdf.numPages; p++) {
     setP(id, 5 + Math.round(p / pdf.numPages * 50), `page ${p}/${pdf.numPages}`);
     const pg  = await pdf.getPage(p);
@@ -185,57 +176,54 @@ async function doPDF(id, file) {
     pages.push({ page: p, text: txt });
     full += ' ' + txt;
   }
-  full = full.replace(/\s+/g,' ').trim();
+  full = full.replace(/\s+/g, ' ').trim();
 
+  // PDF avec texte natif → direct
   if (full.length > 60) {
-    docs[id].pages = pages; docs[id].text = full; return;
+    docs[id].pages = pages;
+    docs[id].text  = full;
+    return;
   }
 
-  // Scanned PDF → rasterize + OCR
+  // PDF scanné → OCR page par page
   setP(id, 55, 'PDF scanné — OCR…');
   const op = [];
   for (let p = 1; p <= Math.min(pdf.numPages, 15); p++) {
-    setP(id, 55 + Math.round(p / pdf.numPages * 44), `OCR p.${p}`);
     const pg  = await pdf.getPage(p);
     const vp  = pg.getViewport({ scale: 2 });
     const cvs = Object.assign(document.createElement('canvas'), { width: vp.width, height: vp.height });
     await pg.render({ canvasContext: cvs.getContext('2d'), viewport: vp }).promise;
     activeId = id;
-    const txt = await runOCR(cvs);
-    activeId = null;
+    const txt = await doOCR(cvs);
+    activeId  = null;
     op.push({ page: p, text: txt });
   }
-  docs[id].pages = op; docs[id].text = op.map(p => p.text).join(' ');
+  docs[id].pages = op;
+  docs[id].text  = op.map(p => p.text).join(' ');
 }
 
-// ── Image JPG/PNG ─────────────────────────────────────────────────────────────
+// ── Image JPG / PNG ───────────────────────────────────────────────────────────
 async function doImg(id, file) {
-  setP(id, 10, 'chargement image…');
-
-  // Decode image to canvas
-  const cvs = await fileToCanvas(file);
-  setP(id, 40, 'OCR en cours…');
+  setP(id, 10, 'décodage…');
+  const cvs = await imgToCanvas(file);
+  setP(id, 35, 'OCR…');
   activeId = id;
-  const txt = await runOCR(cvs);
-  activeId = null;
+  const txt = await doOCR(cvs);
+  activeId  = null;
   docs[id].pages = [{ page: 1, text: txt }];
   docs[id].text  = txt;
 }
 
-function fileToCanvas(file) {
+function imgToCanvas(file) {
   return new Promise((res, rej) => {
     const url = URL.createObjectURL(file);
     const img = new Image();
     img.onload = () => {
-      // Scale up if small, for better OCR accuracy
       const scale = Math.min(4, Math.max(1, 1400 / Math.max(img.naturalWidth, img.naturalHeight, 1)));
-      const w = Math.round(img.naturalWidth * scale);
+      const w = Math.round(img.naturalWidth  * scale);
       const h = Math.round(img.naturalHeight * scale);
       const c = Object.assign(document.createElement('canvas'), { width: w, height: h });
-      const ctx = c.getContext('2d');
-      ctx.imageSmoothingEnabled = true;
-      ctx.imageSmoothingQuality = 'high';
-      ctx.drawImage(img, 0, 0, w, h);
+      c.getContext('2d').drawImage(img, 0, 0, w, h);
       URL.revokeObjectURL(url);
       res(c);
     };
@@ -244,10 +232,18 @@ function fileToCanvas(file) {
   });
 }
 
+// ── OCR ───────────────────────────────────────────────────────────────────────
+async function doOCR(canvas) {
+  const w = await getTW();
+  const r = await w.recognize(canvas);
+  return r.data.text || '';
+}
+
 // ── Text ──────────────────────────────────────────────────────────────────────
 async function doText(id, file) {
   const t = await file.text();
-  docs[id].pages = [{ page: 1, text: t }]; docs[id].text = t;
+  docs[id].pages = [{ page: 1, text: t }];
+  docs[id].text  = t;
 }
 
 // ── Progress ──────────────────────────────────────────────────────────────────
@@ -260,7 +256,7 @@ function setP(id, pct, lbl) {
   if (l) l.textContent = lbl;
 }
 
-// ── Render list ───────────────────────────────────────────────────────────────
+// ── Render ────────────────────────────────────────────────────────────────────
 function render() {
   const ids   = Object.keys(docs);
   const ready = ids.filter(i => docs[i].status === 'ready').length;
@@ -268,9 +264,9 @@ function render() {
     ? `<b>${ready}</b> / ${ids.length} doc${ids.length>1?'s':''} indexé${ready>1?'s':''}`
     : '— aucun document';
   document.getElementById('flist').innerHTML = ids.length ? ids.map(id => {
-    const d = docs[id];
-    const ic = d.status==='loading'?'<span class="spin"></span>':d.status==='ready'?'✓':'✗';
-    const lb = d.status==='loading'?d.plbl:d.status==='ready'?'prêt':'erreur';
+    const d  = docs[id];
+    const ic = d.status==='loading' ? '<span class="spin"></span>' : d.status==='ready' ? '✓' : '✗';
+    const lb = d.status==='loading' ? d.plbl : d.status==='ready' ? 'prêt' : 'erreur';
     const pb = d.status==='loading'
       ? `<div class="fpw" data-id="${id}"><div class="fpb"><div class="fpf" style="width:${d.prog}%"></div></div><div class="fpl">${d.plbl}</div></div>` : '';
     return `<div class="fi ${d.status}" data-id="${id}">
@@ -290,33 +286,32 @@ document.getElementById('q').addEventListener('input', () => { clearTimeout(stmo
 function search() {
   const q   = document.getElementById('q').value.trim();
   const res = document.getElementById('res');
-  const ids = Object.keys(docs).filter(i => docs[i].status === 'ready');
+  const all = Object.keys(docs);
+  const ids = all.filter(i => docs[i].status === 'ready');
 
-  if (!Object.keys(docs).length) { res.innerHTML='<div class="empty"><div class="big">🔍</div>Glissez des documents<br>puis tapez votre recherche.</div>'; return; }
-  if (!q) { res.innerHTML='<div class="empty"><div class="big">✏️</div>Tapez un mot ou une expression.</div>'; return; }
+  if (!all.length) { res.innerHTML = '<div class="empty"><div class="big">🔍</div>Glissez des documents<br>puis tapez votre recherche.</div>'; return; }
+  if (!q)          { res.innerHTML = '<div class="empty"><div class="big">✏️</div>Tapez un mot ou une expression.</div>'; return; }
 
-  const re = new RegExp(esc(q), 'gi');
+  const re    = new RegExp(esc(q), 'gi');
   const cards = ids.map(id => {
     const d = docs[id];
-    const n = (d.text.match(re)||[]).length;
+    const n = (d.text.match(re) || []).length;
     return { d, n, snips: snip(d, q) };
-  }).sort((a,b) => b.n - a.n);
+  }).sort((a, b) => b.n - a.n);
 
-  const tot  = cards.reduce((s,c) => s+c.n, 0);
-  const nhit = cards.filter(c => c.n>0).length;
+  const tot  = cards.reduce((s, c) => s + c.n, 0);
+  const nhit = cards.filter(c => c.n > 0).length;
   document.getElementById('stats').innerHTML =
     `<b>${tot}</b> occurrence${tot>1?'s':''} dans <b>${nhit}</b> doc${nhit>1?'s':''} · ${ids.length} indexé${ids.length>1?'s':''}`;
 
   res.innerHTML = cards.map(({ d, n, snips }) => {
-    const ck = n>0
+    const ck = n > 0
       ? `<span class="rk">${n} résultat${n>1?'s':''}</span>`
       : `<span class="rk z">absent</span>`;
-    const sh = snips.map(s =>
-      `<div class="sn"><div class="snp">${s.l}</div>${s.h}</div>`
-    ).join('');
+    const sh = snips.map(s => `<div class="sn"><div class="snp">${s.l}</div>${s.h}</div>`).join('');
     return `<div class="rc ${n>0?'hit':''}">
       <div class="rh"><span class="fext">${d.ext}</span><span class="rn">${d.name}</span>${ck}</div>
-      ${sh?`<div class="rss">${sh}</div>`:''}
+      ${sh ? `<div class="rss">${sh}</div>` : ''}
     </div>`;
   }).join('');
 }
@@ -326,17 +321,17 @@ function snip(doc, q) {
   for (const pg of doc.pages) {
     let m; re.lastIndex = 0;
     while ((m = re.exec(pg.text)) !== null && out.length < 3) {
-      const s = Math.max(0, m.index-80), e = Math.min(pg.text.length, m.index+q.length+80);
-      let x = pg.text.slice(s,e).replace(/\s+/g,' ').trim();
-      if (s>0) x='…'+x; if (e<pg.text.length) x+='…';
-      const h = x.replace(new RegExp(esc(q),'gi'), v=>`<mark>${v}</mark>`);
-      out.push({ l: doc.pages.length>1?`page ${pg.page}`:'extrait', h });
+      const s = Math.max(0, m.index - 80), e = Math.min(pg.text.length, m.index + q.length + 80);
+      let x = pg.text.slice(s, e).replace(/\s+/g, ' ').trim();
+      if (s > 0) x = '…' + x; if (e < pg.text.length) x += '…';
+      const h = x.replace(new RegExp(esc(q), 'gi'), v => `<mark>${v}</mark>`);
+      out.push({ l: doc.pages.length > 1 ? `page ${pg.page}` : 'extrait', h });
     }
   }
   return out;
 }
 
-function esc(s) { return s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'); }
+function esc(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 </script>
 </body>
 </html>
