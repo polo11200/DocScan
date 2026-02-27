@@ -56,8 +56,8 @@
     .fpl{font-size:.55rem;color:var(--mut);margin-top:.15rem}
     .right{padding:1.5rem;overflow-y:auto;display:flex;flex-direction:column;gap:.8rem}
     #res{display:flex;flex-direction:column;gap:.6rem}
-    .rc{background:var(--surf);border:1px solid var(--brd);border-radius:var(--r);overflow:hidden;animation:fi .15s ease}
-    @keyframes fi{from{opacity:0;transform:translateY(3px)}to{opacity:1}}
+    .rc{background:var(--surf);border:1px solid var(--brd);border-radius:var(--r);overflow:hidden;animation:fadein .15s ease}
+    @keyframes fadein{from{opacity:0;transform:translateY(3px)}to{opacity:1}}
     .rc.hit{border-color:var(--acc)}
     .rh{display:flex;align-items:center;gap:.6rem;padding:.6rem .85rem;border-bottom:1px solid var(--brd)}
     .rn{flex:1;font-size:.78rem;font-weight:500}
@@ -71,6 +71,14 @@
     .empty .big{font-size:1.6rem;margin-bottom:.6rem}
     .spin{display:inline-block;width:8px;height:8px;border:2px solid var(--brd);border-top-color:var(--acc);border-radius:50%;animation:sp .5s linear infinite;vertical-align:middle}
     @keyframes sp{to{transform:rotate(360deg)}}
+
+    /* Debug panel */
+    #dbg{display:none;position:fixed;bottom:0;left:0;right:0;height:220px;background:#020c0f;border-top:2px solid var(--acc);font-size:.65rem;font-family:monospace;overflow-y:auto;padding:.5rem 1rem;z-index:999}
+    #dbg.on{display:block}
+    #dbg-btn{position:fixed;bottom:8px;right:8px;background:var(--surf);border:1px solid var(--brd);color:var(--mut);font-size:.6rem;padding:.25rem .5rem;border-radius:2px;cursor:pointer;z-index:1000;font-family:monospace}
+    .dline{padding:.1rem 0;border-bottom:1px solid #0d2a30}
+    .dline.ok{color:var(--ok)}.dline.err{color:var(--err)}.dline.info{color:var(--acc)}
+
     footer{border-top:1px solid var(--brd);padding:.55rem 2rem;font-size:.58rem;color:#2a6570}
     @media(max-width:700px){main{grid-template-columns:1fr}.left{border-right:none;border-bottom:1px solid var(--brd)}}
   </style>
@@ -101,46 +109,26 @@
     <div id="res"><div class="empty"><div class="big">🔍</div>Glissez des documents<br>puis tapez votre recherche.</div></div>
   </div>
 </main>
-<footer>DocScan · PDF.js (PDF) · OCR.space (images) · 100% gratuit · fermez l'onglet pour tout effacer</footer>
+<footer>DocScan · PDF.js · traitement local · fermez l'onglet pour tout effacer</footer>
+
+<div id="dbg"></div>
+<button id="dbg-btn" onclick="document.getElementById('dbg').classList.toggle('on')">🔍 debug</button>
 
 <script>
+// ── Debug ─────────────────────────────────────────────────────────────────────
+function log(msg, type=''){
+  console.log('[DS]', msg);
+  const d = document.getElementById('dbg');
+  const l = document.createElement('div');
+  l.className = 'dline' + (type ? ' '+type : '');
+  l.textContent = new Date().toLocaleTimeString() + ' ' + msg;
+  d.appendChild(l);
+  d.scrollTop = d.scrollHeight;
+}
+
 // ── PDF.js ────────────────────────────────────────────────────────────────────
 pdfjsLib.GlobalWorkerOptions.workerSrc =
   'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-
-// ── OCR via ocr.space (gratuit, sans clé pour usage basique) ─────────────────
-// L'image est envoyée en base64 à l'API publique gratuite de ocr.space
-// Aucune donnée n'est conservée selon leur politique (traitement immédiat)
-async function ocrSpace(canvas) {
-  // Réduire à max 1024px pour rester dans la limite gratuite (1MB)
-  const MAX = 1024;
-  let w = canvas.width, h = canvas.height;
-  if (w > MAX || h > MAX) {
-    const s = Math.min(MAX / w, MAX / h);
-    w = Math.round(w * s); h = Math.round(h * s);
-    const c2 = Object.assign(document.createElement('canvas'), { width: w, height: h });
-    c2.getContext('2d').drawImage(canvas, 0, 0, w, h);
-    canvas = c2;
-  }
-
-  const base64 = canvas.toDataURL('image/jpeg', 0.85).split(',')[1];
-  const body   = new FormData();
-  body.append('base64Image', 'data:image/jpeg;base64,' + base64);
-  body.append('language', 'fre');          // français
-  body.append('detectOrientation', 'true');
-  body.append('OCREngine', '2');           // moteur plus précis
-
-  const resp = await fetch('https://api.ocr.space/parse/image', {
-    method : 'POST',
-    body,
-    headers: { 'apikey': 'helloworld' }    // clé publique de démo, toujours valide
-  });
-
-  if (!resp.ok) throw new Error('OCR.space HTTP ' + resp.status);
-  const data = await resp.json();
-  if (data.IsErroredOnProcessing) throw new Error(data.ErrorMessage?.[0] || 'OCR error');
-  return (data.ParsedResults || []).map(r => r.ParsedText || '').join('\n');
-}
 
 // ── State ─────────────────────────────────────────────────────────────────────
 const docs = {};
@@ -160,6 +148,7 @@ async function go(files) {
     const id  = ++uid;
     const ext = f.name.split('.').pop().toLowerCase();
     docs[id]  = { id, name: f.name, ext, text: '', pages: [], status: 'loading', prog: 0, plbl: '…' };
+    log(`📄 Fichier: ${f.name} (${ext}, ${Math.round(f.size/1024)}KB)`, 'info');
     render();
     try {
       if (ext === 'pdf')                                       await doPDF(id, f);
@@ -167,82 +156,99 @@ async function go(files) {
       else if (['jpg','jpeg','png'].includes(ext))             await doImg(id, f);
       else throw new Error('Format non supporté: ' + ext);
       docs[id].status = 'ready';
+      log(`✓ Prêt. Texte extrait (${docs[id].text.length} chars): "${docs[id].text.slice(0,120).replace(/\n/g,' ')}"`, 'ok');
     } catch(e) {
       docs[id].status = 'error';
-      console.error(f.name, e);
+      log(`✗ ERREUR: ${e.message}`, 'err');
     }
     render();
     search();
   }
 }
 
-// ── PDF ───────────────────────────────────────────────────────────────────────
+// ── PDF — extraction texte natif ──────────────────────────────────────────────
 async function doPDF(id, file) {
   setP(id, 5, 'lecture PDF…');
   const buf = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
-  const pages = []; let full = '';
+  log(`PDF: ${pdf.numPages} page(s)`, 'info');
+
+  const pages = [];
+  let full = '';
 
   for (let p = 1; p <= pdf.numPages; p++) {
-    setP(id, 5 + Math.round(p / pdf.numPages * 88), `page ${p}/${pdf.numPages}`);
-    const pg  = await pdf.getPage(p);
-    const txt = (await pg.getTextContent()).items.map(i => i.str).join(' ').trim();
-    pages.push({ page: p, text: txt });
-    full += ' ' + txt;
+    setP(id, 5 + Math.round(p / pdf.numPages * 90), `page ${p}/${pdf.numPages}`);
+    const pg      = await pdf.getPage(p);
+    const content = await pg.getTextContent();
+
+    // Reconstituer le texte en respectant les espaces et retours à la ligne
+    let pageText = '';
+    let lastY    = null;
+    for (const item of content.items) {
+      if (lastY !== null && Math.abs(item.transform[5] - lastY) > 5) {
+        pageText += ' '; // saut de ligne → espace
+      }
+      pageText += item.str;
+      if (item.hasEOL) pageText += ' ';
+      lastY = item.transform[5];
+    }
+    pageText = pageText.replace(/\s+/g, ' ').trim();
+    log(`  p.${p}: "${pageText.slice(0,80)}" (${pageText.length} chars)`, '');
+    pages.push({ page: p, text: pageText });
+    full += ' ' + pageText;
   }
+
   full = full.replace(/\s+/g, ' ').trim();
+  log(`Texte total PDF: ${full.length} chars`, full.length > 50 ? 'ok' : 'err');
 
-  if (full.length > 60) {
-    docs[id].pages = pages; docs[id].text = full; return;
-  }
-
-  // PDF scanné → rasteriser + OCR via ocr.space
-  setP(id, 55, 'PDF scanné — OCR…');
-  const op = [];
-  for (let p = 1; p <= Math.min(pdf.numPages, 10); p++) {
-    setP(id, 55 + Math.round(p / Math.min(pdf.numPages,10) * 44), `OCR p.${p}…`);
-    const pg  = await pdf.getPage(p);
-    const vp  = pg.getViewport({ scale: 1.5 });
-    const cvs = Object.assign(document.createElement('canvas'), { width: vp.width, height: vp.height });
-    await pg.render({ canvasContext: cvs.getContext('2d'), viewport: vp }).promise;
-    const txt = await ocrSpace(cvs);
-    op.push({ page: p, text: txt });
-  }
-  docs[id].pages = op;
-  docs[id].text  = op.map(p => p.text).join(' ');
+  docs[id].pages = pages;
+  docs[id].text  = full;
 }
 
-// ── Image JPG/PNG ─────────────────────────────────────────────────────────────
+// ── Image — OCR via API gratuite ──────────────────────────────────────────────
 async function doImg(id, file) {
-  setP(id, 15, 'décodage image…');
-  const cvs = await fileToCanvas(file);
-  setP(id, 40, 'OCR en cours…');
-  const txt = await ocrSpace(cvs);
+  setP(id, 20, 'envoi OCR…');
+  log(`Image: envoi à OCR.space…`, 'info');
+
+  // Convertir en base64
+  const b64 = await new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload  = () => res(r.result); // inclut le préfixe data:...
+    r.onerror = rej;
+    r.readAsDataURL(file);
+  });
+
+  const fd = new FormData();
+  fd.append('base64Image', b64);
+  fd.append('language', 'fre');
+  fd.append('isOverlayRequired', 'false');
+  fd.append('OCREngine', '2');
+  fd.append('detectOrientation', 'true');
+
+  const resp = await fetch('https://api.ocr.space/parse/image', {
+    method: 'POST',
+    headers: { 'apikey': 'K81910290488957' }, // clé gratuite ocr.space
+    body: fd
+  });
+
+  log(`OCR.space réponse HTTP: ${resp.status}`, resp.ok ? 'ok' : 'err');
+  if (!resp.ok) throw new Error(`OCR HTTP ${resp.status}`);
+
+  const data = await resp.json();
+  if (data.IsErroredOnProcessing) throw new Error(data.ErrorMessage?.[0] || 'OCR error');
+
+  const txt = (data.ParsedResults || []).map(r => r.ParsedText || '').join('\n');
+  log(`OCR résultat: "${txt.slice(0,100)}"`, txt.length > 10 ? 'ok' : 'err');
+
   docs[id].pages = [{ page: 1, text: txt }];
   docs[id].text  = txt;
-}
-
-function fileToCanvas(file) {
-  return new Promise((res, rej) => {
-    const url = URL.createObjectURL(file);
-    const img = new Image();
-    img.onload = () => {
-      const c = Object.assign(document.createElement('canvas'), {
-        width: img.naturalWidth, height: img.naturalHeight
-      });
-      c.getContext('2d').drawImage(img, 0, 0);
-      URL.revokeObjectURL(url);
-      res(c);
-    };
-    img.onerror = e => { URL.revokeObjectURL(url); rej(e); };
-    img.src = url;
-  });
 }
 
 // ── Text ──────────────────────────────────────────────────────────────────────
 async function doText(id, file) {
   const t = await file.text();
-  docs[id].pages = [{ page: 1, text: t }]; docs[id].text = t;
+  docs[id].pages = [{ page: 1, text: t }];
+  docs[id].text  = t;
 }
 
 // ── Progress ──────────────────────────────────────────────────────────────────
@@ -295,10 +301,11 @@ function search() {
   const cards = ids.map(id => {
     const d = docs[id];
     const n = (d.text.match(re)||[]).length;
-    return { d, n, snips: snip(d,q) };
+    log(`Recherche "${q}" dans ${d.name}: ${n} résultat(s)`, n>0?'ok':'');
+    return { d, n, snips: snip(d, q) };
   }).sort((a,b)=>b.n-a.n);
 
-  const tot  = cards.reduce((s,c)=>s+c.n,0);
+  const tot  = cards.reduce((s,c)=>s+c.n, 0);
   const nhit = cards.filter(c=>c.n>0).length;
   document.getElementById('stats').innerHTML =
     `<b>${tot}</b> occurrence${tot>1?'s':''} dans <b>${nhit}</b> doc${nhit>1?'s':''} · ${ids.length} indexé${ids.length>1?'s':''}`;
@@ -313,16 +320,16 @@ function search() {
   }).join('');
 }
 
-function snip(doc,q){
-  const re=new RegExp(esc(q),'gi'),out=[];
-  for(const pg of doc.pages){
-    let m;re.lastIndex=0;
-    while((m=re.exec(pg.text))!==null&&out.length<3){
-      const s=Math.max(0,m.index-80),e=Math.min(pg.text.length,m.index+q.length+80);
+function snip(doc, q) {
+  const re=new RegExp(esc(q),'gi'), out=[];
+  for (const pg of doc.pages) {
+    let m; re.lastIndex=0;
+    while ((m=re.exec(pg.text))!==null && out.length<3) {
+      const s=Math.max(0,m.index-80), e=Math.min(pg.text.length,m.index+q.length+80);
       let x=pg.text.slice(s,e).replace(/\s+/g,' ').trim();
-      if(s>0)x='…'+x;if(e<pg.text.length)x+='…';
+      if(s>0)x='…'+x; if(e<pg.text.length)x+='…';
       const h=x.replace(new RegExp(esc(q),'gi'),v=>`<mark>${v}</mark>`);
-      out.push({l:doc.pages.length>1?`page ${pg.page}`:'extrait',h});
+      out.push({l:doc.pages.length>1?`page ${pg.page}`:'extrait', h});
     }
   }
   return out;
