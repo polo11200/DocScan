@@ -296,22 +296,6 @@
 
 <main>
 
-  <!-- DROP -->
-  <div id="drop">
-    <input type="file" id="fi" multiple accept=".pdf,.png,.jpg,.jpeg,.txt,.csv,.md,.html"/>
-    <div class="drop-icon">↑</div>
-    <div class="drop-title">Glisser les documents ici</div>
-    <div class="drop-sub">ou cliquer pour sélectionner</div>
-    <div class="drop-fmt">PDF · JPG · PNG · TXT · CSV · MD</div>
-  </div>
-
-  <!-- FILE LIST -->
-  <div class="files-header" id="files-header" style="display:none">
-    <span class="sec-label" id="files-count">0 document</span>
-    <button class="btn-clear" onclick="clearAll()">Tout supprimer</button>
-  </div>
-  <div id="flist"></div>
-
   <!-- SEARCH -->
   <div class="search-wrap">
     <span class="search-icon">⌕</span>
@@ -326,6 +310,22 @@
   <div id="res">
     <div class="empty"><div class="eico">?</div>IMPORTEZ DES DOCUMENTS PUIS TAPEZ POUR CHERCHER</div>
   </div>
+
+  <!-- DROP -->
+  <div id="drop" style="margin-top:.5rem">
+    <input type="file" id="fi" multiple accept=".pdf,.png,.jpg,.jpeg,.txt,.csv,.md,.html"/>
+    <div class="drop-icon">↑</div>
+    <div class="drop-title">Glisser les documents ici</div>
+    <div class="drop-sub">ou cliquer pour sélectionner</div>
+    <div class="drop-fmt">PDF · JPG · PNG · TXT · CSV · MD</div>
+  </div>
+
+  <!-- FILE LIST -->
+  <div class="files-header" id="files-header" style="display:none">
+    <span class="sec-label" id="files-count">0 document</span>
+    <button class="btn-clear" onclick="clearAll()">Tout supprimer</button>
+  </div>
+  <div id="flist"></div>
 
 </main>
 
