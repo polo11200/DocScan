@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DocScan — Recherche instantanée</title>
+
+  <!-- PDF.js 2.16 — supporte disableWorker:true sans erreur blob: -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+  <!-- Tesseract.js v2 — workerPath accepte une URL CDN directe -->
+  <script src="https://unpkg.com/tesseract.js@2.1.5/dist/tesseract.min.js"></script>
+
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=DM+Mono:ital,wght@0,400;0,500;1,400&display=swap');
+
+    :root {
+      --bg: #071a1e;
+      --surface: #0d2a30;
+      --border: #1a4a52;
+      --accent: #2dd4bf;
+      --accent2: #0891b2;
+      --text: #e0f4f5;
+      --muted: #4d8a92;
+      --success: #34d1a0;
+      --radius: 4px;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      background-image: radial-gradient(ellipse at 20% 0%, #0d3a42 0%, transparent 60%),
+                        radial-gradient(ellipse at 80% 100%, #062830 0%, transparent 50%);
+      color: var(--text);
+      font-family: 'DM Mono', monospace;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      padding: 2rem 2.5rem 1.5rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: baseline;
+      gap: 1.5rem;
+      flex-wrap: wrap;
+    }
+    .logo {
+      font-family: 'Syne', sans-serif;
+      font-weight: 800;
+      font-size: 2rem;
+      letter-spacing: -0.03em;
+      color: var(--accent);
+      line-height: 1;
+    }
+    .logo span { color: var(--accent2); }
+    .tagline {
+      font-size: 0.72rem;
+      color: var(--muted);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+    .privacy-badge {
+      margin-left: auto;
+      font-size: 0.65rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--success);
+      border: 1px solid var(--success);
+      padding: 0.3rem 0.7rem;
+      border-radius: 2px;
+    }
+
+    main {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: auto 1fr;
+    }
+
+    .search-section {
+      grid-column: 1 / -1;
+      padding: 1.5rem 2.5rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      gap: 1rem;
+      align-items: center;
+    }
+    .search-wrap { flex: 1; position: relative; }
+    .search-wrap::before {
+      content: '>';
+      position: absolute;
+      left: 1rem; top: 50%;
+      transform: translateY(-50%);
+      color: var(--accent);
+      pointer-events: none;
+    }
+    #searchInput {
+      width: 100%;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-family: 'DM Mono', monospace;
+      font-size: 1.1rem;
+      padding: 0.9rem 1rem 0.9rem 2.5rem;
+      border-radius: var(--radius);
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    #searchInput:focus { border-color: var(--accent); }
+    #searchInput::placeholder { color: var(--muted); }
+
+    .stats-bar { font-size: 0.7rem; color: var(--muted); letter-spacing: 0.05em; white-space: nowrap; }
+    .stats-bar .hit { color: var(--accent); font-weight: 500; }
+
+    .drop-section {
+      border-right: 1px solid var(--border);
+      padding: 2rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+      overflow-y: auto;
+    }
+
+    #dropZone {
+      border: 2px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 3rem 2rem;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      position: relative;
+      flex-shrink: 0;
+    }
+    #dropZone.dragover { border-color: var(--accent); background: rgba(45,212,191,0.04); }
+    #dropZone input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+    .drop-icon { font-size: 2.5rem; margin-bottom: 0.75rem; }
+    .drop-label { font-size: 0.8rem; color: var(--muted); }
+    .drop-label strong { color: var(--accent); }
+    .drop-formats { margin-top: 0.5rem; font-size: 0.65rem; color: #1a5a65; letter-spacing: 0.08em; text-transform: uppercase; }
+
+    .file-list-title { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); }
+    #fileList { display: flex; flex-direction: column; gap: 0.5rem; }
+
+    .file-item {
+      display: flex; align-items: center; gap: 0.75rem;
+      padding: 0.65rem 0.9rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      transition: border-color 0.2s;
+    }
+    .file-item.indexing { border-color: #1a4a52; }
+    .file-item.ready    { border-color: var(--success); }
+    .file-item.error    { border-color: var(--accent2); }
+    .file-ext {
+      font-size: 0.6rem; font-weight: 500; letter-spacing: 0.05em; text-transform: uppercase;
+      padding: 0.2rem 0.4rem; border-radius: 2px; background: #0a2228; color: var(--muted);
+      flex-shrink: 0; min-width: 2.5rem; text-align: center;
+    }
+    .file-name { flex: 1; font-size: 0.78rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .file-status { font-size: 0.65rem; flex-shrink: 0; }
+    .file-status.indexing { color: var(--muted); }
+    .file-status.ready    { color: var(--success); }
+    .file-status.error    { color: var(--accent2); }
+    .file-remove {
+      background: none; border: none; color: #1a5560; cursor: pointer;
+      font-size: 0.9rem; padding: 0 0.2rem; transition: color 0.2s; flex-shrink: 0;
+    }
+    .file-remove:hover { color: var(--accent2); }
+
+    .results-section { padding: 2rem; overflow-y: auto; display: flex; flex-direction: column; gap: 1rem; }
+    .results-title { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); }
+    #resultsList { display: flex; flex-direction: column; gap: 0.75rem; }
+
+    .result-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); overflow: hidden;
+      animation: fadeIn 0.2s ease;
+    }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; } }
+    .result-card.matched { border-color: var(--accent); }
+    .result-header { display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem 1rem; border-bottom: 1px solid var(--border); }
+    .result-filename { flex: 1; font-size: 0.82rem; font-weight: 500; }
+    .result-count { font-size: 0.7rem; background: var(--accent); color: #071a1e; padding: 0.2rem 0.5rem; border-radius: 2px; font-weight: 700; }
+    .result-count.zero { background: transparent; color: var(--muted); border: 1px solid var(--border); font-weight: 400; }
+    .result-snippets { padding: 0.75rem 1rem; display: flex; flex-direction: column; gap: 0.5rem; }
+    .snippet { font-size: 0.75rem; color: #7ab8bf; line-height: 1.6; border-left: 2px solid var(--border); padding-left: 0.75rem; }
+    .snippet mark { background: var(--accent); color: #071a1e; padding: 0 0.15rem; border-radius: 1px; }
+    .snippet-page { font-size: 0.6rem; color: var(--muted); margin-bottom: 0.2rem; letter-spacing: 0.05em; text-transform: uppercase; }
+
+    .empty-state { text-align: center; padding: 3rem 2rem; color: var(--muted); font-size: 0.8rem; line-height: 1.8; }
+    .empty-state .big { font-size: 2rem; margin-bottom: 1rem; }
+
+    .spinner {
+      display: inline-block; width: 10px; height: 10px;
+      border: 2px solid var(--border); border-top-color: var(--accent);
+      border-radius: 50%; animation: spin 0.6s linear infinite; vertical-align: middle;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    footer {
+      border-top: 1px solid var(--border); padding: 0.75rem 2.5rem;
+      display: flex; gap: 2rem; font-size: 0.62rem; color: #2a6570; letter-spacing: 0.05em;
+    }
+    footer span { color: #3a7a85; }
+
+    @media (max-width: 768px) {
+      main { grid-template-columns: 1fr; }
+      .drop-section { border-right: none; border-bottom: 1px solid var(--border); }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">Doc<span>Scan</span></div>
+  <div class="tagline">Recherche instantanée dans vos documents</div>
+  <div class="privacy-badge">✓ 100% local — rien enregistré</div>
+</header>
+
+<main>
+  <div class="search-section">
+    <div class="search-wrap">
+      <input type="text" id="searchInput" placeholder="Rechercher un mot, une date, un code..." autocomplete="off" spellcheck="false" />
+    </div>
+    <div class="stats-bar" id="statsBar">— aucun document chargé</div>
+  </div>
+
+  <div class="drop-section">
+    <div id="dropZone">
+      <input type="file" id="fileInput" multiple accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.bmp,.tif,.tiff,.txt,.csv,.md,.html" />
+      <div class="drop-icon">📂</div>
+      <div class="drop-label"><strong>Glissez vos fichiers ici</strong><br>ou cliquez pour sélectionner</div>
+      <div class="drop-formats">PDF · JPG · PNG · GIF · WEBP · TXT · CSV · MD · HTML</div>
+    </div>
+    <div class="file-list-title">Documents chargés</div>
+    <div id="fileList">
+      <div class="empty-state" style="padding:1rem;font-size:0.75rem;">Aucun document pour l'instant.</div>
+    </div>
+  </div>
+
+  <div class="results-section">
+    <div class="results-title">Résultats</div>
+    <div id="resultsList">
+      <div class="empty-state">
+        <div class="big">🔍</div>
+        Glissez des documents puis tapez votre recherche.<br>
+        Les résultats apparaissent instantanément.
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <span>DocScan</span>
+  Traitement 100% local dans votre navigateur ·
+  Aucune donnée envoyée sur un serveur ·
+  PDF.js + Tesseract.js (OCR) ·
+  Fermez l'onglet pour tout effacer
+</footer>
+
+<script>
+// ── PDF.js : forcer le mode sans worker (évite blob: dans les iframes sandboxées) ──
+pdfjsLib.GlobalWorkerOptions.workerSrc = '';
+
+// ── Tesseract v2 : URLs CDN directes, pas de blob: ──
+const TESS_WORKER = 'https://unpkg.com/tesseract.js@2.1.5/dist/worker.min.js';
+const TESS_CORE   = 'https://unpkg.com/tesseract.js-core@2.2.0/tesseract-core.wasm.js';
+const TESS_LANG   = 'https://tessdata.projectnaptha.com/4.0.0';
+
+// ── State ──
+const docs = {};
+let docIdCounter = 0;
+let searchTimeout = null;
+
+// ── DOM ──
+const dropZone    = document.getElementById('dropZone');
+const fileInput   = document.getElementById('fileInput');
+const fileList    = document.getElementById('fileList');
+const searchInput = document.getElementById('searchInput');
+const resultsList = document.getElementById('resultsList');
+const statsBar    = document.getElementById('statsBar');
+
+// ── Drag & drop ──
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('dragover');
+  handleFiles(Array.from(e.dataTransfer.files));
+});
+fileInput.addEventListener('change', () => {
+  handleFiles(Array.from(fileInput.files));
+  fileInput.value = '';
+});
+
+// ── File processing ──
+async function handleFiles(files) {
+  for (const file of files) {
+    const id  = ++docIdCounter;
+    const ext = file.name.split('.').pop().toLowerCase();
+    docs[id]  = { id, name: file.name, ext, text: '', pages: [], status: 'indexing' };
+    renderFileList();
+    try {
+      await processFile(id, file, ext);
+      docs[id].status = 'ready';
+    } catch (err) {
+      console.error('DocScan error:', err);
+      docs[id].status = 'error';
+    }
+    renderFileList();
+    runSearch();
+  }
+}
+
+async function processFile(id, file, ext) {
+  if (ext === 'pdf') {
+    await processPDF(id, file);
+  } else if (['png','jpg','jpeg','gif','webp','bmp','tif','tiff'].includes(ext)) {
+    await processImage(id, file);
+  } else {
+    await processText(id, file);
+  }
+}
+
+// ── PDF ──
+async function processPDF(id, file) {
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: buf, disableWorker: true }).promise;
+  const pages = [];
+  let fullText = '';
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const page = await pdf.getPage(p);
+    const content = await page.getTextContent();
+    const text = content.items.map(i => i.str).join(' ');
+    pages.push({ page: p, text });
+    fullText += ' ' + text;
+  }
+  if (fullText.trim().length < 50) {
+    // PDF scanné → OCR page par page
+    const ocrPages = await ocrPDF(pdf);
+    docs[id].pages = ocrPages;
+    docs[id].text  = ocrPages.map(p => p.text).join(' ');
+  } else {
+    docs[id].pages = pages;
+    docs[id].text  = fullText;
+  }
+}
+
+async function ocrPDF(pdf) {
+  const pages = [];
+  for (let p = 1; p <= Math.min(pdf.numPages, 10); p++) {
+    const page     = await pdf.getPage(p);
+    const viewport = page.getViewport({ scale: 2 });
+    const canvas   = document.createElement('canvas');
+    canvas.width   = viewport.width;
+    canvas.height  = viewport.height;
+    await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+    const blob = await new Promise(res => canvas.toBlob(res, 'image/png'));
+    const text = await runOCR(blob);
+    pages.push({ page: p, text });
+  }
+  return pages;
+}
+
+// ── Image ──
+async function processImage(id, file) {
+  const text = await runOCR(file);
+  docs[id].pages = [{ page: 1, text }];
+  docs[id].text  = text;
+}
+
+async function runOCR(fileOrBlob) {
+  const result = await Tesseract.recognize(fileOrBlob, 'fra+eng', {
+    workerPath: TESS_WORKER,
+    corePath:   TESS_CORE,
+    langPath:   TESS_LANG,
+    logger:     () => {}
+  });
+  return (result.data && result.data.text) ? result.data.text : (result.text || '');
+}
+
+// ── Text ──
+async function processText(id, file) {
+  const text = await file.text();
+  docs[id].pages = [{ page: 1, text }];
+  docs[id].text  = text;
+}
+
+// ── Render file list ──
+function renderFileList() {
+  const ids = Object.keys(docs);
+  if (!ids.length) {
+    fileList.innerHTML = '<div class="empty-state" style="padding:1rem;font-size:0.75rem;">Aucun document pour l\'instant.</div>';
+    statsBar.innerHTML = '— aucun document chargé';
+    return;
+  }
+  const ready = ids.filter(id => docs[id].status === 'ready').length;
+  statsBar.innerHTML = `<span class="hit">${ready}</span> / ${ids.length} doc${ids.length > 1 ? 's' : ''} indexé${ready > 1 ? 's' : ''}`;
+  fileList.innerHTML = ids.map(id => {
+    const d = docs[id];
+    const st = d.status === 'indexing'
+      ? '<span class="spinner"></span> indexation…'
+      : d.status === 'ready' ? '✓ prêt' : '✗ erreur';
+    return `<div class="file-item ${d.status}" data-id="${id}">
+      <span class="file-ext">${d.ext}</span>
+      <span class="file-name" title="${d.name}">${d.name}</span>
+      <span class="file-status ${d.status}">${st}</span>
+      <button class="file-remove" onclick="removeDoc(${id})" title="Supprimer">✕</button>
+    </div>`;
+  }).join('');
+}
+
+function removeDoc(id) {
+  delete docs[id];
+  renderFileList();
+  runSearch();
+}
+
+// ── Search ──
+searchInput.addEventListener('input', () => {
+  clearTimeout(searchTimeout);
+  searchTimeout = setTimeout(runSearch, 120);
+});
+
+function runSearch() {
+  const query = searchInput.value.trim();
+  const ids   = Object.keys(docs);
+
+  if (!ids.length) {
+    resultsList.innerHTML = '<div class="empty-state"><div class="big">🔍</div>Glissez des documents puis tapez votre recherche.</div>';
+    return;
+  }
+  if (!query) {
+    resultsList.innerHTML = '<div class="empty-state"><div class="big">✏️</div>Tapez un mot ou une expression<br>pour lancer la recherche.</div>';
+    return;
+  }
+
+  const re    = new RegExp(escapeRegex(query), 'gi');
+  const cards = ids
+    .filter(id => docs[id].status === 'ready')
+    .map(id => {
+      const d          = docs[id];
+      const matchCount = (d.text.match(re) || []).length;
+      return { d, matchCount, snippets: extractSnippets(d, query, 3) };
+    })
+    .sort((a, b) => b.matchCount - a.matchCount);
+
+  if (!cards.length) {
+    resultsList.innerHTML = '<div class="empty-state">Aucun document encore indexé, patientez…</div>';
+    return;
+  }
+
+  const totalHits  = cards.reduce((s, c) => s + c.matchCount, 0);
+  const docsHits   = cards.filter(c => c.matchCount > 0).length;
+  const readyCount = Object.values(docs).filter(d => d.status === 'ready').length;
+  statsBar.innerHTML = `<span class="hit">${totalHits}</span> occurrence${totalHits > 1 ? 's' : ''} dans <span class="hit">${docsHits}</span> doc${docsHits > 1 ? 's' : ''} · ${readyCount} indexé${readyCount > 1 ? 's' : ''}`;
+
+  resultsList.innerHTML = cards.map(({ d, matchCount, snippets }) => {
+    const matched  = matchCount > 0;
+    const countEl  = matched
+      ? `<span class="result-count">${matchCount} résultat${matchCount > 1 ? 's' : ''}</span>`
+      : `<span class="result-count zero">absent</span>`;
+    const snipHtml = snippets.map(s =>
+      `<div class="snippet"><div class="snippet-page">${s.label}</div>${s.html}</div>`
+    ).join('');
+    return `<div class="result-card ${matched ? 'matched' : ''}">
+      <div class="result-header">
+        <span class="file-ext">${d.ext}</span>
+        <span class="result-filename">${d.name}</span>
+        ${countEl}
+      </div>
+      ${snipHtml ? `<div class="result-snippets">${snipHtml}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+function extractSnippets(doc, query, max) {
+  const re = new RegExp(escapeRegex(query), 'gi');
+  const snippets = [];
+  for (const pg of doc.pages) {
+    let m;
+    while ((m = re.exec(pg.text)) !== null && snippets.length < max) {
+      const start = Math.max(0, m.index - 80);
+      const end   = Math.min(pg.text.length, m.index + query.length + 80);
+      let ex      = pg.text.slice(start, end).replace(/\s+/g, ' ').trim();
+      if (start > 0) ex = '…' + ex;
+      if (end < pg.text.length) ex += '…';
+      const html  = ex.replace(new RegExp(escapeRegex(query), 'gi'), x => `<mark>${x}</mark>`);
+      snippets.push({ label: doc.pages.length > 1 ? `Page ${pg.page}` : 'Extrait', html });
+    }
+  }
+  return snippets;
+}
+
+function escapeRegex(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+</script>
+</body>
+</html>
