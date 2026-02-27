@@ -166,6 +166,30 @@ async function go(files) {
   }
 }
 
+// ── Répare le texte "espacé lettre par lettre" issu de certains PDF ──────────
+// "N E O F O R S E" → "NEOFORSE"
+// "a l a r m e" → "alarme"
+// Principe : si on a une séquence de tokens d'1 caractère séparés par des espaces,
+// on les fusionne. On préserve les vrais mots.
+function fixSpacedText(text) {
+  // Fusionne les séquences de caractères isolés séparés par des espaces
+  // "A L A R M E" → "ALARME" | "t e x t i l e" → "textile" | "0 6 . 9 0" → "06.90"
+  const tokens = text.split(' ');
+  const out = [];
+  let run = [];
+  const flush = () => {
+    if (run.length >= 2) out.push(run.join(''));
+    else if (run.length === 1) out.push(run[0]);
+    run = [];
+  };
+  for (const tok of tokens) {
+    if (tok.length === 1) { run.push(tok); }
+    else { flush(); if (tok.length > 0) out.push(tok); }
+  }
+  flush();
+  return out.join(' ');
+}
+
 // ── PDF — extraction texte natif ──────────────────────────────────────────────
 async function doPDF(id, file) {
   setP(id, 5, 'lecture PDF…');
@@ -193,6 +217,7 @@ async function doPDF(id, file) {
       lastY = item.transform[5];
     }
     pageText = pageText.replace(/\s+/g, ' ').trim();
+    pageText = fixSpacedText(pageText);
     log(`  p.${p}: "${pageText.slice(0,80)}" (${pageText.length} chars)`, '');
     pages.push({ page: p, text: pageText });
     full += ' ' + pageText;
